@@ -5,9 +5,10 @@ from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
 from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
 from ulauncher.api.shared.action.HideWindowAction import HideWindowAction
 from ulauncher.api.shared.action.RunScriptAction import RunScriptAction
+from i3ipc import Connection
 
 import subprocess
-from os import path
+from os import path, environ
 import re
 
 
@@ -38,16 +39,32 @@ class KeywordQueryEventListener(EventListener):
         self.lws = "$HOME/.lws"
         self.ws_list = None
 
+        if self.is_sway_running():
+            self.i3 = Connection()
+
         self.get_current_ws()
         self.init_lws()
         self.get_ws_list()
 
+    def is_sway_running(self):
+        return environ.get("SWAYSOCK")
+
     def get_current_ws(self):
+        return (
+            self.get_current_ws_sway()
+            if self.is_sway_running()
+            else self.get_current_ws_x11()
+        )
+
+    def get_current_ws_x11(self):
         """Get current workspace ID & name: [id, name]"""
 
         # Get the current workspace line from wmctrl
         tmp = subprocess.run(
-            ["wmctrl -d | grep -F ' * DG:'"], capture_output=True, shell=True, text=True
+            ["wmctrl -d | grep -iF ' * dg:'"],
+            capture_output=True,
+            shell=True,
+            text=True,
         ).stdout.strip()
         # Extract the workspace id
         id = tmp.split()[0]
@@ -58,6 +75,12 @@ class KeywordQueryEventListener(EventListener):
             name = tmp[m.span()[1] :]
 
         self.curr_ws = [id, name]
+
+    def get_current_ws_sway(self):
+        focused_ws = self.i3.get_tree().find_focused().workspace()
+        self.curr_ws = [focused_ws.id, focused_ws.name]
+
+    # TODO test
 
     def lws_save(self):
         """Return shell command to save the current workspace
@@ -81,8 +104,8 @@ class KeywordQueryEventListener(EventListener):
             ws = file.read()
         return ws.split(maxsplit=1)
 
-    def get_ws_list(self):
-        """Get list of all workspaces"""
+    def get_ws_list_x11(self):
+        """Get list of all workspace names"""
         result = subprocess.run(
             [
                 "wmctrl -d | sed -n -E -e 's/^.*WA: (N\/A|.,. [[:digit:]]+x[[:digit:]]+)  //p'"
@@ -92,6 +115,24 @@ class KeywordQueryEventListener(EventListener):
             text=True,
         ).stdout
         self.ws_list = [y for y in (x.strip() for x in result.split("\n")) if y]
+
+    def get_ws_list_sway(self):
+        self.ws_list = map(lambda ws: ws.name.strip(), self.i3.get_workspaces())
+
+    def get_ws_list(self):
+        return (
+            self.get_ws_list_sway()
+            if self.is_sway_running()
+            else self.get_ws_list_x11()
+        )
+
+    def switch_workspace_command(self, search):
+        if self.is_sway_running():
+            return f"swaymsg workspace number {search} && {self.lws_save()}"
+        else:
+            return "wmctrl -s {} && {}".format(
+                abs(int(search) - 1), self.lws_save()
+            )  # Switch to workspace n
 
     def on_event(self, event, extension):
         keyword = event.get_keyword()
@@ -108,7 +149,7 @@ class KeywordQueryEventListener(EventListener):
 
         if search.isdigit():
             # If search is a number, then shortcut to that workspace.
-            action = "wmctrl -s {} && {}".format(abs(int(search) - 1), self.lws_save())
+            action = self.switch_workspace_command(search)
             items.append(
                 ExtensionResultItem(
                     icon="images/workspace-switcher-top-left.svg",
@@ -120,7 +161,7 @@ class KeywordQueryEventListener(EventListener):
         elif search == "-":
             # Shortcut to return to your previous workspace, like `cd -` does.
             lws = self.get_last_ws()
-            action = 'wmctrl -s "{}" && {}'.format(lws[0], self.lws_save())
+            action = self.switch_workspace_command(lws[0])
             items.append(
                 ExtensionResultItem(
                     icon="images/workspace-switcher-top-left.svg",
@@ -139,8 +180,7 @@ class KeywordQueryEventListener(EventListener):
                     items.append(
                         ExtensionResultItem(
                             icon="images/workspace-switcher-top-left.svg",
-                            # Workaround for https://github.com/Ulauncher/Ulauncher/issues/587
-                            name=ws_name.replace("&", "&amp;") if search else ws_name,
+                            name=ws_name,
                             description="Workspace Name: {}, Workspace Id: {}".format(
                                 ws_name, int(ws_idx) + 1
                             ),

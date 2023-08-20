@@ -1,8 +1,8 @@
 {
   "required_api_version": "^2.0.0",
-  "name": "Workspace Switcher",
-  "description": "Find and switch Linux/X11 workspaces by name",
-  "developer_name": "Duncan Lock",
+  "name": "Workspace Switcher Wayland",
+  "description": "Find and switch Linux/X11/Sway workspaces by name",
+  "developer_name": "Duncan Lock and Vivien Wilde",
   "icon": "images/workspace-switcher.svg",
   "options": {
     "query_debounce": 0.1
@@ -12,7 +12,7 @@
       "id": "ws_kw",
       "type": "keyword",
       "name": "Workspace Switcher",
-      "default_value": "w"
+      "default_value": "ws"
     }
   ]
 }
