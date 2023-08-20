@@ -46,6 +46,10 @@ class KeywordQueryEventListener(EventListener):
         self.init_lws()
         self.get_ws_list()
 
+
+     def sway_clean_name(self, name):
+         return name.replace(":", " : ")
+
     def is_sway_running(self):
         return environ.get("SWAYSOCK")
 
